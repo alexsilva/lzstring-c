@@ -43,7 +43,6 @@ utf8::string decompress_from_base64(string data) {
     int enc1, enc2, enc3, enc4;
     int chr1, chr2, chr3;
     int index = 0;
-    char dst[5];
 
     while (index < str_len) {
         enc1 = BASE64.find(data[index]);
