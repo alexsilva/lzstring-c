@@ -6,7 +6,8 @@
 #define LZSTRING_LZSTRING_H
 
 #include "iostream"
+#include "string.hxx"
 
-std::string decompress_from_base64(std::string data);
+utf8::string decompress_from_base64(std::string data);
 
 #endif //LZSTRING_LZSTRING_H

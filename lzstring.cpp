@@ -7,50 +7,55 @@
 #include <stdio.h>
 #include <math.h>
 #include <map>
+#include <vector>
 #include "utf8proc.h"
+#include "string.hxx"
 
 using namespace std;
 
 // definitions
-string decompress(string data);
+utf8::string decompress(utf8::string data);
+typedef std::map<int, utf8::string> DICT;
 
-typedef std::map<int, std::string> DICT;
+const string BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 
-string key_str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+utf8::string utf8encode(int data) {
+    char dst[5];
 
-void utf8char(utf8proc_uint8_t *buff, char utf8encoded[], int size) {
-    memcpy(utf8encoded, (char *) buff, (size_t) size);
-    utf8encoded[size] = '\0';
+    utf8proc_uint8_t *buff = new utf8proc_uint8_t[4];
+    utf8proc_ssize_t size = utf8proc_encode_char(data, buff);
+
+    memcpy(dst, (char *) buff, (size_t) size);
+    dst[size] = '\0';
+
+    return utf8::string(dst);
 }
 
-string decompress_from_base64(string data) {
-    cout << data << endl;
+utf8::string decompress_from_base64(string data) {
     int str_len = data.size();
     if (str_len == 0)
         return NULL;
 
-    string output = "";
+    utf8::string output("");
     int _output = 0;
     int ol = 0;
 
     int enc1, enc2, enc3, enc4;
-    int chr1, chr2, chr3, codepoint_len;
+    int chr1, chr2, chr3;
     int index = 0;
-
-    utf8proc_uint8_t *codepoint_buff = new utf8proc_uint8_t[4];
-    char utf8encoded[5];
+    char dst[5];
 
     while (index < str_len) {
-        enc1 = key_str.find(data[index]);
+        enc1 = BASE64.find(data[index]);
         index++;
 
-        enc2 = key_str.find(data[index]);
+        enc2 = BASE64.find(data[index]);
         index++;
 
-        enc3 = key_str.find(data[index]);
+        enc3 = BASE64.find(data[index]);
         index++;
 
-        enc4 = key_str.find(data[index]);
+        enc4 = BASE64.find(data[index]);
         index++;
 
         chr1 = ((enc1 << 2) | (enc2 >> 4));
@@ -61,27 +66,21 @@ string decompress_from_base64(string data) {
             _output = chr1 << 8;
 
             if (enc3 != 64) {
-                codepoint_len = utf8proc_encode_char(_output | chr2, codepoint_buff);
-                utf8char(codepoint_buff, utf8encoded, codepoint_len);
-                output += utf8encoded;
+                output += utf8encode(_output | chr2);
             }
 
             if (enc4 != 64) {
                 _output = chr3 << 8;
             }
         } else {
-            codepoint_len = utf8proc_encode_char(_output | chr1, codepoint_buff);
-            utf8char(codepoint_buff, utf8encoded, codepoint_len);
-            output += utf8encoded;
+            output += utf8encode(_output | chr1);
 
             if (enc3 != 64) {
                 _output = chr2 << 8;
             }
 
             if (enc4 != 64) {
-                codepoint_len = utf8proc_encode_char(_output | chr3, codepoint_buff);
-                utf8char(codepoint_buff, utf8encoded, codepoint_len);
-                output += utf8encoded;
+                output += utf8encode(_output | chr3);
             }
         }
         ol += 3;
@@ -89,18 +88,18 @@ string decompress_from_base64(string data) {
     return decompress(output);
 }
 
-int new_bits(int *maxpower, const char *data_string, int *data_index,
-             utf8proc_int32_t *data_val, int *data_position) {
+int new_bits(int &maxpower, utf8::string &data_string,
+             int &data_index, int &data_val, int &data_position) {
     int bits = 0;
     int power = 1;
     int resb = 0;
-    while (power != *maxpower) {
-        resb = *data_val & *data_position;
-        *data_position >>= 1;
-        if (*data_position == 0) {
-            *data_position = 32768;
-            *data_index += utf8proc_iterate((utf8proc_uint8_t *) data_string + *data_index, -1,
-                                           data_val);
+    while (power != maxpower) {
+        resb = data_val & data_position;
+        data_position >>= 1;
+        if (data_position == 0) {
+            data_position = 32768;
+            data_val = data_string[data_index];
+            data_index++;
         }
         bits |= (resb > 0 ? 1 : 0) * power;
         power <<= 1;
@@ -108,8 +107,8 @@ int new_bits(int *maxpower, const char *data_string, int *data_index,
     return bits;
 }
 
-string decompress(string compressed) {
-    int data_size = compressed.length();
+utf8::string decompress(utf8::string data_string) {
+    int data_size = data_string.length();
     if (data_size == 0)
         return "";
 
@@ -120,37 +119,29 @@ string decompress(string compressed) {
     int numBits = 3;
     int index_c = 0;
 
-    int codepoint_len = 0;
-    utf8proc_uint8_t *codepoint_buff = new utf8proc_uint8_t[4];
-    char c[5];
-
-    string entry, result, w;
-    const char *data_string = compressed.data();
-    utf8proc_ssize_t data_index = 0;
-    utf8proc_int32_t data_val;
+    utf8::string entry, result, w, c;
+    int data_index = 1;
+    int data_val;
     int data_position = 32768;
-
-    data_index += utf8proc_iterate((utf8proc_uint8_t *) data_string, -1, &data_val);
+    data_val = data_string[0];
 
     int maxpower = (int) pow(2, 2);
-    int bits = new_bits(&maxpower, data_string, &data_index, &data_val, &data_position);
+    int bits = new_bits(maxpower, data_string, data_index, data_val, data_position);
     int nnext = bits;
 
     switch (nnext) {
         case 0:
             maxpower = (int) pow(2, 8);
-            bits = new_bits(&maxpower, data_string, &data_index, &data_val, &data_position);
-            codepoint_len = utf8proc_encode_char(bits, codepoint_buff);
-            utf8char(codepoint_buff, c, codepoint_len);
+            bits = new_bits(maxpower, data_string, data_index, data_val, data_position);
+            c = utf8encode(bits);
             break;
         case 1:
             maxpower = (int) pow(2, 16);
-            bits = new_bits(&maxpower, data_string, &data_index, &data_val, &data_position);
-            codepoint_len = utf8proc_encode_char(bits, codepoint_buff);
-            utf8char(codepoint_buff, c, codepoint_len);
+            bits = new_bits(maxpower, data_string, data_index, data_val, data_position);
+            c = utf8encode(bits);
             break;
         case 2:  // error ?
-            return "";
+            return "error: bad data";
         default:break;
     }
     dictionary[3] = c;
@@ -162,15 +153,14 @@ string decompress(string compressed) {
             return "";
 
         maxpower = (int) pow(2, numBits);
-        bits = new_bits(&maxpower, data_string, &data_index, &data_val, &data_position);
+        bits = new_bits(maxpower, data_string, data_index, data_val, data_position);
         index_c = bits;
 
         switch (index_c) {
             case 0:
                 maxpower = (int) pow(2, 8);
-                bits = new_bits(&maxpower, data_string, &data_index, &data_val, &data_position);
-                codepoint_len = utf8proc_encode_char(bits, codepoint_buff);
-                utf8char(codepoint_buff, c, codepoint_len);
+                bits = new_bits(maxpower, data_string, data_index, data_val, data_position);
+                c = utf8encode(bits);
                 dictionary[dictSize] = c;
 
                 dictSize += 1;
@@ -179,10 +169,8 @@ string decompress(string compressed) {
                 break;
             case 1:
                 maxpower = (int) pow(2, 16);
-
-                bits = new_bits(&maxpower, data_string, &data_index, &data_val, &data_position);
-                codepoint_len = utf8proc_encode_char(bits, codepoint_buff);
-                utf8char(codepoint_buff, c, codepoint_len);
+                bits = new_bits(maxpower, data_string, data_index, data_val, data_position);
+                c = utf8encode(bits);
                 dictionary[dictSize] = c;
 
                 dictSize += 1;
@@ -202,13 +190,16 @@ string decompress(string compressed) {
         if (dictionary.count(index_c) > 0) {
             entry = dictionary.find(index_c)->second;
         } else if (index_c == dictSize) {
-            entry = w + w[0];
+            w.push_back(w[0]);
+            entry = w;
         } else {
-            return NULL;  // error
+            return result;  // invalid result
         }
 
         result += entry;
-        dictionary[dictSize] = w + entry[0];
+
+        w.push_back(entry[0]);
+        dictionary[dictSize] = w;
         dictSize += 1;
         enlargeIn -= 1;
 
